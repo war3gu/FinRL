@@ -121,6 +121,20 @@ SRI_KEHATI_TICKER = [
 
 # check https://wrds-www.wharton.upenn.edu/ for U.S. index constituents
 # Dow 30 constituents in 2021/10
+DOW_10_TICKER = [
+    "AXP",
+    "AMGN",
+    "AAPL",
+    "BA",
+    "CAT",
+    "CSCO",
+    "CVX",
+    "GS",
+    "HD",
+    "HON"
+]
+
+
 DOW_30_TICKER = [
     "AXP",
     "AMGN",

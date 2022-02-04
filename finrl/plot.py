@@ -66,12 +66,13 @@ def backtest_plot(
         pyfolio.create_full_tear_sheet(
             returns=test_returns, benchmark_rets=baseline_returns, set_context=False
         )
+        #plt.show()
 
 
 def get_baseline(ticker, start, end):
     dji = YahooDownloader(
         start_date=start, end_date=end, ticker_list=[ticker]
-    ).fetch_data()
+    ).fetch_data(proxy='127.0.0.1:10808')
     return dji
 
 
