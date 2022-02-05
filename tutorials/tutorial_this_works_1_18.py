@@ -239,13 +239,13 @@ def get_multiproc_env(self, n=10):
 
 if __name__=="__main__":
     proxy = None
-    total_timesteps = 50000             #总的采样数量
-    ppo_params ={'n_steps': 2048,       #n_steps表示一次采样的数据长度,需要乘以环境的数量
+    total_timesteps = 100000             #总的采样数量
+    ppo_params ={'n_steps': 4096,       #n_steps表示一次采样的数据长度,需要乘以环境的数量
                  'ent_coef': 0.01,
                  'learning_rate': 0.00009,
-                 'batch_size': 512,     #gpu跑一次的数据长度
+                 'batch_size': 1024,     #gpu跑一次的数据长度
                  'gamma': 0.99,
-                 'n_epochs': 100}      #一次采样的数据使用多少次,这个足够大才能看到gpu的使用率的明显提升
+                 'n_epochs': 400}      #一次采样的数据使用多少次,这个足够大才能看到gpu的使用率的明显提升
     policy_kwargs = {"net_arch": [1024, 1024,1024, 1024,  1024]}
     start_date = '2009-01-01'
     mid_date = '2020-01-01'
