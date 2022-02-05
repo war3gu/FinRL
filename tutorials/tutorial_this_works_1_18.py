@@ -205,7 +205,7 @@ config.END_DATE
 # In[12]:
 
 
-print(config.DOW_10_TICKER)
+#print(config.DOW_10_TICKER)
 
 
 # In[ ]:
@@ -214,7 +214,7 @@ import platform
 
 if __name__=="__main__":
     proxy = None
-    total_timesteps = 500000           #总的采样数量
+    total_timesteps = 50000           #总的采样数量
     ppo_params ={'n_steps': 2048,       #n_steps表示一次采样的数据长度
                  'ent_coef': 0.01,
                  'learning_rate': 0.00009,
@@ -225,6 +225,8 @@ if __name__=="__main__":
     start_date = '2009-01-01'
     mid_date = '2020-01-01'
     end_date = '2021-10-31'
+
+    ticker_list = config.DOW_30_TICKER   #在sagemaker上找不到DOW_10_TICKER
 
 
     if platform.system() == 'Windows':
@@ -240,12 +242,13 @@ if __name__=="__main__":
         start_date = '2019-01-01'
         mid_date   = '2020-01-01'
         end_date   = '2021-01-01'
+        ticker_list = config.DOW_10_TICKER  #windows上跑少一些，会快一些
 
 
 
     df = YahooDownloader(start_date=start_date,
                          end_date=end_date,
-                         ticker_list=config.DOW_10_TICKER).fetch_data(proxy=proxy)
+                         ticker_list=ticker_list).fetch_data(proxy=proxy)
     fe = FeatureEngineer(use_technical_indicator=True,
                          tech_indicator_list=config.TECHNICAL_INDICATORS_LIST,
                          use_turbulence=True,
