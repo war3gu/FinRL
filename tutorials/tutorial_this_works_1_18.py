@@ -212,10 +212,35 @@ config.END_DATE
 
 import platform
 
+
+'''
+def env_fn():
+    return StockTradingEnvV2()
+
+
+def create_sb_env(gym):
+    e = DummyVecEnv([lambda: gym])
+    obs = e.reset()
+    return e, obs
+'''
+
+'''
+def get_multiproc_env(self, n=10):
+    def get_self():
+        return deepcopy(self)
+
+    #e = SubprocVecEnv([get_self for _ in range(n)], start_method="fork")
+    e = SubprocVecEnv([get_self for _ in range(n)], start_method="spawn")  #Only ‘forkserver’ and ‘spawn’ start methods are thread-safe
+    #e = SubprocVecEnv([get_self for _ in range(n)])
+    #e = DummyVecEnv([get_self])
+    obs = e.reset()
+    return e, obs
+'''
+
 if __name__=="__main__":
     proxy = None
-    total_timesteps = 50000           #总的采样数量
-    ppo_params ={'n_steps': 2048,       #n_steps表示一次采样的数据长度
+    total_timesteps = 50000             #总的采样数量
+    ppo_params ={'n_steps': 2048,       #n_steps表示一次采样的数据长度,需要乘以环境的数量
                  'ent_coef': 0.01,
                  'learning_rate': 0.00009,
                  'batch_size': 512,     #gpu跑一次的数据长度
@@ -231,7 +256,7 @@ if __name__=="__main__":
 
     if platform.system() == 'Windows':
         proxy = '127.0.0.1:10808'
-        total_timesteps = 1000
+        total_timesteps = 2000
         ppo_params ={'n_steps': 256,
                      'ent_coef': 0.01,
                      'learning_rate': 0.00009,
@@ -280,7 +305,7 @@ if __name__=="__main__":
                                     reward_scaling=1,
                                     daily_information_cols=information_cols,
                                     print_verbosity=500,
-                                    random_start=True)
+                                    random_start=True)      #启动多个环境采样，每个需要有所不同，需要随机启动
 
     e_trade_gym = StockTradingEnvV2(df=trade,
                                     initial_amount=1e6,
@@ -316,13 +341,19 @@ if __name__=="__main__":
 
 
     n_cores = multiprocessing.cpu_count()
-
     print("core count {0}".format(n_cores))
-    #n_cores = 24
-    #n_cores = 1
-    #env_train, _ = e_train_gym.get_multiproc_env(n = n_cores)
 
-    env_train, _ = e_train_gym.get_sb_env()
+    #n_cores = 1
+    #env_train, _ = e_train_gym.get_multiproc_env(n=n_cores)
+
+    if platform.system() == 'Windows':
+        print("train use multiproc_env")
+        #env_train, _ = e_train_gym.get_sb_env()
+        env_train, _ = e_train_gym.get_multiproc_env(n=n_cores)
+    else:
+        print("train use multiproc_env")
+        env_train, _ = e_train_gym.get_multiproc_env(n=n_cores)
+
     env_trade, _ = e_trade_gym.get_sb_env()
 
     agent = DRLAgent(env=env_train)

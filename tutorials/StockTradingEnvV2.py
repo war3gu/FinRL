@@ -394,7 +394,7 @@ class StockTradingEnvV2(gym.Env):
             return deepcopy(self)
 
         #e = SubprocVecEnv([get_self for _ in range(n)], start_method="fork")
-        e = SubprocVecEnv([get_self for _ in range(n)], start_method="spawn")
+        e = SubprocVecEnv([get_self for _ in range(n)], start_method=None)  #Only ‘forkserver’ and ‘spawn’ start methods are thread-safe
         #e = SubprocVecEnv([get_self for _ in range(n)])
         #e = DummyVecEnv([get_self])
         obs = e.reset()
