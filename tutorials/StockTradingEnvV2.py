@@ -104,7 +104,7 @@ class StockTradingEnvV2(gym.Env):
             low=-np.inf, high=np.inf, shape=(self.state_space,)
         )
         self.episode = -1  # initialize so we can call reset
-        self.episode_history = []
+        #self.episode_history = []
         self.printed_header = False
         self.daily_reward = daily_reward
         self.cache_indicator_data = cache_indicator_data
@@ -221,7 +221,7 @@ class StockTradingEnvV2(gym.Env):
     def return_terminal(self, reason="Last Date", reward=0):
 
         state = self.raw_state_cast_state(-1)
-        #self.log_step(reason=reason, terminal_reward=reward)
+        self.log_step(reason=reason, terminal_reward=reward)
         reward = reward * self.reward_scaling
         # Add outputs to logger interface
         '''
@@ -244,22 +244,21 @@ class StockTradingEnvV2(gym.Env):
         return state, reward, True, {}
 
     def log_step(self, reason, terminal_reward=None):
+        cash, assets, asset_value, total_value = self.raw_state_cast_information(-1)
+
         if terminal_reward is None:
-            terminal_reward = self.account_information["reward"][-1]
-        cash_pct = (
-                self.account_information["cash"][-1]
-                / self.account_information["total_assets"][-1]
-        )
+            terminal_reward = self.get_reward()
+        cash_pct = cash/total_value
         rec = [
             self.episode,
-            self.date_index - self.starting_point,
+            self.current_step,
             reason,
-            f"${int(self.account_information['total_assets'][-1])}",
-            f"{terminal_reward*100:0.5f}%",
-            f"{cash_pct*100:0.2f}%",
+            total_value,
+            terminal_reward,
+            cash_pct
             ]
 
-        self.episode_history.append(rec)
+        #self.episode_history.append(rec)
         print(self.template.format(*rec))
 
     def log_header(self):

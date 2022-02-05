@@ -246,6 +246,7 @@ if __name__=="__main__":
                  'batch_size': 1024,     #gpu跑一次的数据长度
                  'gamma': 0.99,
                  'n_epochs': 400}      #一次采样的数据使用多少次,这个足够大才能看到gpu的使用率的明显提升
+    eval_freq = 10000
     policy_kwargs = {"net_arch": [1024, 1024,1024, 1024,  1024]}
     start_date = '2009-01-01'
     mid_date = '2020-01-01'
@@ -263,6 +264,7 @@ if __name__=="__main__":
                      'batch_size': 64,
                      'gamma': 0.99,
                      'n_epochs': 10}
+        eval_freq = 1000
         policy_kwargs = {"net_arch": [1024, 1024, 1024]}
         start_date = '2019-01-01'
         mid_date   = '2020-01-01'
@@ -304,7 +306,7 @@ if __name__=="__main__":
                                     cash_penalty_proportion=0.2,
                                     reward_scaling=1,
                                     daily_information_cols=information_cols,
-                                    print_verbosity=500,
+                                    print_verbosity=250,    #多少step执行log_step
                                     random_start=True)      #启动多个环境采样，每个需要有所不同，需要随机启动
 
     e_trade_gym = StockTradingEnvV2(df=trade,
@@ -367,7 +369,7 @@ if __name__=="__main__":
     model.learn(total_timesteps=total_timesteps,    #5000000   采样的总数量
                 eval_env=env_trade,
                 eval_log_path='.',
-                eval_freq=250,
+                eval_freq=eval_freq,   #采样多少次执行一次eval,eval会把env_trade整个跑一遍，很耗时间，所以可以设置的大点
                 log_interval=1,
                 tb_log_name='1_18_lastrun',
                 n_eval_episodes=1)
