@@ -272,6 +272,9 @@ if __name__=="__main__":
         ticker_list = config.DOW_10_TICKER  #windows上跑少一些，会快一些
 
 
+    print('total_timesteps = {0}'.format(total_timesteps))
+
+
 
     df = YahooDownloader(start_date=start_date,
                          end_date=end_date,
