@@ -117,6 +117,8 @@ class StockTradingEnvV2(gym.Env):
             ]
             print("data cached!")
 
+        #self.close_index = self.get_close_index()
+
     def seed(self, seed=None):
         if seed is None:
             seed = int(round(time.time() * 1000))
@@ -145,15 +147,61 @@ class StockTradingEnvV2(gym.Env):
             "total_assets": [],
             "reward": [],
         }
+
+
+
+        #应该是记录cash， assets， date， 就可以得到一切信息，包括状态
+        self.raw_state_memory = []
+
+        self.add_raw_state(self.initial_amount, [0] * len(self.assets), self.date_index)
+
+        init_state = self.raw_state_cast_state(-1)
+        '''
         init_state = np.array(
             [self.initial_amount]
             + [0] * len(self.assets)
             + self.get_date_vector(self.date_index)
         )
-        self.state_memory.append(init_state)
+        '''
+        self.state_memory.append(init_state)  #account_information是多余的，根据state是可以算出来account_information的
         return init_state
 
+    def add_raw_state(self, cash, assets, date_index):
+        raw_state = {}
+        raw_state["cash"] = cash
+        raw_state["assets"] = assets
+        raw_state["date_index"] = date_index
+
+        self.raw_state_memory.append(raw_state)
+
+    def raw_state_cast_state(self, index):
+        raw_state = self.raw_state_memory[index]
+        cash = raw_state["cash"]
+        assets = raw_state["assets"]
+        date_index = raw_state["date_index"]
+
+        state = np.array(
+            [cash]
+            + assets
+            + self.get_date_vector(date_index)
+        )
+        return state
+
+    def raw_state_cast_information(self, index):
+        raw_state = self.raw_state_memory[index]
+        cash = raw_state["cash"]
+        assets = raw_state["assets"]
+        date_index = raw_state["date_index"]
+
+        assert min(assets) >= 0
+        closings = np.array(self.get_date_vector(date_index, cols=["close"]))
+        asset_value = np.dot(assets, closings)
+        total_value = cash + asset_value
+        return cash, assets, asset_value, total_value
+
     def get_date_vector(self, date, cols=None):
+        #print("xxxxxxx")
+        #print(date)
         if (cols is None) and (self.cached_data is not None):
             return self.cached_data[date]
         else:
@@ -164,16 +212,19 @@ class StockTradingEnvV2(gym.Env):
             v = []
             for a in self.assets:
                 subset = trunc_df[trunc_df[self.stock_col] == a]
-                v += subset.loc[date, cols].tolist()
+                #print(subset["close"])
+                ddd = subset.loc[date, cols]
+                v += ddd.tolist()
             assert len(v) == len(self.assets) * len(cols)
             return v
 
     def return_terminal(self, reason="Last Date", reward=0):
 
-        state = self.state_memory[-1]
-        self.log_step(reason=reason, terminal_reward=reward)
+        state = self.raw_state_cast_state(-1)
+        #self.log_step(reason=reason, terminal_reward=reward)
         reward = reward * self.reward_scaling
         # Add outputs to logger interface
+        '''
         reward_pct = self.account_information["total_assets"][-1] / self.initial_amount
         logger.record("environment/total_reward_pct", (reward_pct - 1) * 100)
         logger.record(
@@ -189,6 +240,7 @@ class StockTradingEnvV2(gym.Env):
             self.account_information["cash"][-1]
             / self.account_information["total_assets"][-1],
             )
+        '''
         return state, reward, True, {}
 
     def log_step(self, reason, terminal_reward=None):
@@ -229,13 +281,18 @@ class StockTradingEnvV2(gym.Env):
         if self.current_step==0:
             return 0
         else:
-            assets = self.account_information['total_assets'][-1]
-            cash = self.account_information['cash'][-1]
-            cash_penalty = max(0, (assets*self.cash_penalty_proportion-cash))   #punish for too little cash
-            assets -= cash_penalty
-            reward = (assets/self.initial_amount)-1
-            reward/=self.current_step                 #average   reward
+            cash_last, assets_last, asset_value_last, total_value_last = self.raw_state_cast_information(-2)
+            cash, assets, asset_value, total_value = self.raw_state_cast_information(-1)
+
+            total_value_last = self.clip_total_assets(total_value_last, cash_last)
+            total_value = self.clip_total_assets(total_value, cash)
+            reward = (total_value - total_value_last)/self.initial_amount
             return reward
+
+    def clip_total_assets(self, total_assets, cash):
+        cash_penalty = max(0, (total_assets*self.cash_penalty_proportion-cash))   #punish for too little cash
+        total_assets -= cash_penalty
+        return total_assets
 
     def step(self, actions):
         # let's just log what we're doing in terms of max actions at each step.
@@ -252,23 +309,23 @@ class StockTradingEnvV2(gym.Env):
         # if we're at the end
         if self.date_index == len(self.dates) - 1:
             # if we hit the end, set reward to total gains (or losses)
-            return self.return_terminal(reward=self.get_reward())
+            return self.return_terminal(reward=0)                    #最后一天，没有操作，reward为0
         else:
             # compute value of cash + assets
-            begin_cash = self.state_memory[-1][0]
-            holdings = self.state_memory[-1][1 : len(self.assets) + 1]
-            assert min(holdings) >= 0
-            closings = np.array(self.get_date_vector(self.date_index, cols=["close"]))
-            asset_value = np.dot(holdings, closings)
 
-            # reward is (cash + assets) - (cash_last_step + assets_last_step)
-            reward = self.get_reward()
+            cash, assets, asset_value, total_value = self.raw_state_cast_information(-1)
+
+            closings = np.array(self.get_date_vector(self.date_index, cols=["close"]))
+
+
 
             # log the values of cash, assets, and total assets
-            self.account_information["cash"].append(begin_cash)                         #record cash
+
+            self.account_information["cash"].append(cash)                         #record cash
             self.account_information["asset_value"].append(asset_value)                 #record asset
-            self.account_information["total_assets"].append(begin_cash + asset_value)   #record total asset
-            self.account_information["reward"].append(reward)                           #record reward
+            self.account_information["total_assets"].append(total_value)   #record total asset
+            self.account_information["reward"].append(0)                           #record reward
+
 
             # multiply action values by our scalar multiplier and save
             actions = actions * self.hmax                     #money
@@ -279,13 +336,13 @@ class StockTradingEnvV2(gym.Env):
             self.transaction_memory.append(actions)
 
             # clip actions so we can't sell more assets than we hold
-            actions = np.maximum(actions, -np.array(holdings))  #-表示卖出，不能卖空
+            actions = np.maximum(actions, -np.array(assets))  #-表示卖出，不能卖空
 
             # compute our proceeds from sales, and add to cash
             sells = -np.clip(actions, -np.inf, 0)             #stock sell
             proceeds = np.dot(sells, closings)                #gain cash
             costs = proceeds * self.transaction_cost_pct      #cost cash
-            coh = begin_cash + proceeds                       #current cash
+            coh = cash + proceeds                             #current cash
 
             # compute the cost of our buys
             buys = np.clip(actions, 0, np.inf)                 #stock buy
@@ -294,9 +351,9 @@ class StockTradingEnvV2(gym.Env):
 
             # if we run out of cash, end the cycle and penalize
             if (spend + costs) > coh:                          #买+交易费>卖+当前金钱
-                return self.return_terminal(
+                return self.return_terminal(                   #没有操作，reward为0
                     reason="CASH SHORTAGE",
-                    reward=self.get_reward()
+                    reward=0
                 )
 
             # verify we didn't do anything impossible here
@@ -304,14 +361,25 @@ class StockTradingEnvV2(gym.Env):
 
             # update our holdings
             coh = coh - spend - costs                         #update total asset
-            holdings_updated = holdings + actions             #update hlodings
-            self.date_index += 1
-            state = (
-                    [coh] + list(holdings_updated) + self.get_date_vector(self.date_index)
-            )
-            self.state_memory.append(state)
+            holdings_updated = assets + actions               #update hlodings
+            self.date_index += 1                              #new day
+
+
+            #self.state_memory.append(state)
+            self.add_raw_state(coh, list(holdings_updated), self.date_index)  #新状态，新一天
+
+            #此时才能计算reward。操作后第二天的资产减去操作前第一天的资产
+
+            # reward is (cash + assets) - (cash_last_step + assets_last_step)
+            reward = self.get_reward()
+
+
+            state = self.raw_state_cast_state(-1)
+
             reward = reward * self.reward_scaling
             return state, reward, False, {}
+
+
 
     def get_sb_env(self):
         def get_self():
@@ -332,6 +400,8 @@ class StockTradingEnvV2(gym.Env):
         obs = e.reset()
         return e, obs
 
+
+
     def save_asset_memory(self):
         if self.current_step == 0:
             return None
@@ -339,7 +409,10 @@ class StockTradingEnvV2(gym.Env):
             self.account_information["date"] = self.dates[
                                                -len(self.account_information["cash"]) :
                                                ]
+            
             return pd.DataFrame(self.account_information)
+
+
 
     def save_action_memory(self):
         if self.current_step == 0:

@@ -210,13 +210,42 @@ print(config.DOW_10_TICKER)
 
 # In[ ]:
 
+import platform
+
 if __name__=="__main__":
-    start_date = '2019-01-01'
+    proxy = None
+    total_timesteps = 500000           #总的采样数量
+    ppo_params ={'n_steps': 2048,       #n_steps表示一次采样的数据长度
+                 'ent_coef': 0.01,
+                 'learning_rate': 0.00009,
+                 'batch_size': 512,     #gpu跑一次的数据长度
+                 'gamma': 0.99,
+                 'n_epochs': 100}      #一次采样的数据使用多少次,这个足够大才能看到gpu的使用率的明显提升
+    policy_kwargs = {"net_arch": [1024, 1024,1024, 1024,  1024]}
+    start_date = '2009-01-01'
     mid_date = '2020-01-01'
-    end_date = '2021-01-01'
+    end_date = '2021-10-31'
+
+
+    if platform.system() == 'Windows':
+        proxy = '127.0.0.1:10808'
+        total_timesteps = 1000
+        ppo_params ={'n_steps': 256,
+                     'ent_coef': 0.01,
+                     'learning_rate': 0.00009,
+                     'batch_size': 64,
+                     'gamma': 0.99,
+                     'n_epochs': 10}
+        policy_kwargs = {"net_arch": [1024, 1024, 1024]}
+        start_date = '2019-01-01'
+        mid_date   = '2020-01-01'
+        end_date   = '2021-01-01'
+
+
+
     df = YahooDownloader(start_date=start_date,
                          end_date=end_date,
-                         ticker_list=config.DOW_10_TICKER).fetch_data(proxy='127.0.0.1:10808')
+                         ticker_list=config.DOW_10_TICKER).fetch_data(proxy=proxy)
     fe = FeatureEngineer(use_technical_indicator=True,
                          tech_indicator_list=config.TECHNICAL_INDICATORS_LIST,
                          use_turbulence=True,
@@ -293,18 +322,13 @@ if __name__=="__main__":
 
     agent = DRLAgent(env=env_train)
 
-    ppo_params ={'n_steps': 256,
-                 'ent_coef': 0.01,
-                 'learning_rate': 0.00009,
-                 #'batch_size': 1024,
-                 'gamma': 0.99}
-    policy_kwargs = {"net_arch": [1024, 1024,1024, 1024,  1024]}
+
 
     model = agent.get_model("ppo",
                             model_kwargs=ppo_params,
                             policy_kwargs=policy_kwargs,
                             verbose=1)
-    model.learn(total_timesteps=1000,    #5000000
+    model.learn(total_timesteps=total_timesteps,    #5000000   采样的总数量
                 eval_env=env_trade,
                 eval_log_path='.',
                 eval_freq=250,
@@ -319,7 +343,7 @@ if __name__=="__main__":
     turbulence_threshold = np.quantile(insample_turbulence.turbulence.values,1)
     trade.head()
 
-    e_trade_gym.hmax = 2500
+    e_trade_gym.hmax = 5000
     df_account_value, df_actions = DRLAgent.DRL_prediction(model=model,environment = e_trade_gym)
     df_account_value.head(50)
 
