@@ -106,7 +106,7 @@ import pandas as pd
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-matplotlib.use('TkAgg')
+#matplotlib.use('TkAgg')
 import datetime
 
 #get_ipython().run_line_magic('matplotlib', 'inline')
