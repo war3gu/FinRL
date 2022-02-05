@@ -135,6 +135,9 @@ DOW_10_TICKER = [
 ]
 
 
+
+
+
 DOW_30_TICKER = [
     "AXP",
     "AMGN",
