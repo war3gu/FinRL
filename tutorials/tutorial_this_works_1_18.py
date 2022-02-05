@@ -316,6 +316,8 @@ if __name__=="__main__":
 
 
     n_cores = multiprocessing.cpu_count()
+
+    print("core count {0}".format(n_cores))
     #n_cores = 24
     #n_cores = 1
     #env_train, _ = e_train_gym.get_multiproc_env(n = n_cores)
