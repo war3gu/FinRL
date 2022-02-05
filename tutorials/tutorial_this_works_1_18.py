@@ -378,11 +378,12 @@ if __name__=="__main__":
                 n_eval_episodes=1)
 
     model.save("different.model")
-    data_turbulence = processed[(processed.date<mid_date) & (processed.date>=start_date)]
-    insample_turbulence = data_turbulence.drop_duplicates(subset=['date'])
-    insample_turbulence.turbulence.describe()
-    turbulence_threshold = np.quantile(insample_turbulence.turbulence.values,1)
-    trade.head()
+
+    #data_turbulence = processed[(processed.date<mid_date) & (processed.date>=start_date)]
+    #insample_turbulence = data_turbulence.drop_duplicates(subset=['date'])
+    #insample_turbulence.turbulence.describe()
+    #turbulence_threshold = np.quantile(insample_turbulence.turbulence.values,1)
+    #trade.head()
 
     e_trade_gym.hmax = 5000
     df_account_value, df_actions = DRLAgent.DRL_prediction(model=model,environment = e_trade_gym)
