@@ -140,7 +140,7 @@ class StockTradingEnvV2(gym.Env):
         self.episode += 1
         self.actions_memory = []
         self.transaction_memory = []
-        self.state_memory = []
+        #self.state_memory = []
         self.account_information = {
             "cash": [],
             "asset_value": [],
@@ -153,7 +153,7 @@ class StockTradingEnvV2(gym.Env):
         #应该是记录cash， assets， date， 就可以得到一切信息，包括状态
         self.raw_state_memory = []
 
-        self.add_raw_state(self.initial_amount, [0] * len(self.assets), self.date_index)
+        self.add_raw_state(np.array([0] * len(self.assets)), np.array([0] * len(self.assets)), self.initial_amount, [0] * len(self.assets), self.date_index)
 
         init_state = self.raw_state_cast_state(-1)
         '''
@@ -163,11 +163,13 @@ class StockTradingEnvV2(gym.Env):
             + self.get_date_vector(self.date_index)
         )
         '''
-        self.state_memory.append(init_state)  #account_information是多余的，根据state是可以算出来account_information的
+        #self.state_memory.append(init_state)  #account_information是多余的，根据state是可以算出来account_information的
         return init_state
 
-    def add_raw_state(self, cash, assets, date_index):
+    def add_raw_state(self,cash_change, asset_change, cash, assets, date_index): #cash_change,asset_change都是没clip的
         raw_state = {}
+        raw_state["cash_change"] = cash_change
+        raw_state["asset_change"] = asset_change
         raw_state["cash"] = cash
         raw_state["assets"] = assets
         raw_state["date_index"] = date_index
@@ -193,11 +195,58 @@ class StockTradingEnvV2(gym.Env):
         assets = raw_state["assets"]
         date_index = raw_state["date_index"]
 
+        date = self.dates[date_index]
+
         assert min(assets) >= 0
         closings = np.array(self.get_date_vector(date_index, cols=["close"]))
         asset_value = np.dot(assets, closings)
         total_value = cash + asset_value
-        return cash, assets, asset_value, total_value
+        return cash, assets, asset_value, total_value, date
+
+    def raw_state_cast_action_memory(self):
+        raw_state_memory = pd.DataFrame(self.raw_state_memory)
+        date_index = raw_state_memory["date_index"]
+        date = self.dates[date_index]
+        cash_change = raw_state_memory["cash_change"]
+        asset_change= raw_state_memory["asset_change"]
+
+        df = pd.DataFrame(
+            {
+                "date": date,
+                "actions": cash_change,                          #cash   change
+                "transactions": asset_change,                    #asset  changes
+            }
+        )
+
+        return df[1:]                                            #第一天是没操作的
+
+    def raw_state_cast_information_memory(self):
+        cash_list = []
+        asset_value_list = []
+        total_value_list = []
+        date_list = []
+        reward_list = []
+        length = len(self.raw_state_memory)
+        for i in range(1, length):
+            cash, _, asset_value, total_value, date = self.raw_state_cast_information(i)
+            reward = self.get_reward_by_index(i, i-1)
+            cash_list.append(cash)
+            asset_value_list.append(asset_value)
+            total_value_list.append(total_value)
+            date_list.append(date)
+            reward_list.append(reward)
+
+        df = pd.DataFrame(
+            {
+                "date": date_list,
+                "cash": cash_list,
+                "asset_value": asset_value_list,
+                "total_assets": total_value_list,
+                "reward": reward_list
+            }
+        )
+
+        return df
 
     def get_date_vector(self, date, cols=None):
         #print("xxxxxxx")
@@ -244,7 +293,7 @@ class StockTradingEnvV2(gym.Env):
         return state, reward, True, {}
 
     def log_step(self, reason, terminal_reward=None):
-        cash, assets, asset_value, total_value = self.raw_state_cast_information(-1)
+        cash, assets, asset_value, total_value, _ = self.raw_state_cast_information(-1)
 
         if terminal_reward is None:
             terminal_reward = self.get_reward()
@@ -280,13 +329,17 @@ class StockTradingEnvV2(gym.Env):
         if self.current_step==0:
             return 0
         else:
-            cash_last, assets_last, asset_value_last, total_value_last = self.raw_state_cast_information(-2)
-            cash, assets, asset_value, total_value = self.raw_state_cast_information(-1)
+            return self.get_reward_by_index(-1, -2)
 
-            total_value_last = self.clip_total_assets(total_value_last, cash_last)
-            total_value = self.clip_total_assets(total_value, cash)
-            reward = (total_value - total_value_last)/self.initial_amount
-            return reward
+    def get_reward_by_index(self, index, index_last):
+        cash_last, assets_last, asset_value_last, total_value_last, _ = self.raw_state_cast_information(index_last)
+        cash, assets, asset_value, total_value, _ = self.raw_state_cast_information(index)
+
+        total_value_last = self.clip_total_assets(total_value_last, cash_last)
+        total_value = self.clip_total_assets(total_value, cash)
+        reward = (total_value - total_value_last)/self.initial_amount
+
+        return reward
 
     def clip_total_assets(self, total_assets, cash):
         cash_penalty = max(0, (total_assets*self.cash_penalty_proportion-cash))   #punish for too little cash
@@ -312,7 +365,7 @@ class StockTradingEnvV2(gym.Env):
         else:
             # compute value of cash + assets
 
-            cash, assets, asset_value, total_value = self.raw_state_cast_information(-1)
+            cash, assets, asset_value, total_value, _ = self.raw_state_cast_information(-1)
 
             closings = np.array(self.get_date_vector(self.date_index, cols=["close"]))
 
@@ -328,10 +381,12 @@ class StockTradingEnvV2(gym.Env):
 
             # multiply action values by our scalar multiplier and save
             actions = actions * self.hmax                     #money
+            cash_change = actions                             #金钱的变化
             self.actions_memory.append(actions)
 
             # scale cash purchases to asset # changes
             actions = actions / closings                      #stock count change
+            asset_change = actions                            #股票持有量的变化
             self.transaction_memory.append(actions)
 
             # clip actions so we can't sell more assets than we hold
@@ -365,7 +420,16 @@ class StockTradingEnvV2(gym.Env):
 
 
             #self.state_memory.append(state)
-            self.add_raw_state(coh, list(holdings_updated), self.date_index)  #新状态，新一天
+            self.add_raw_state(cash_change, asset_change, coh, list(holdings_updated), self.date_index)  #新状态，新一天
+
+            '''
+            if self.current_step == 5:
+                dummy_action = self.raw_state_cast_action_memory()
+                dummy_infor = self.raw_state_cast_information_memory()
+                dummy_infor = []
+            '''
+
+
 
             #此时才能计算reward。操作后第二天的资产减去操作前第一天的资产
 
@@ -405,11 +469,7 @@ class StockTradingEnvV2(gym.Env):
         if self.current_step == 0:
             return None
         else:
-            self.account_information["date"] = self.dates[
-                                               -len(self.account_information["cash"]) :
-                                               ]
-            
-            return pd.DataFrame(self.account_information)
+            return self.raw_state_cast_information_memory()
 
 
 
@@ -417,13 +477,7 @@ class StockTradingEnvV2(gym.Env):
         if self.current_step == 0:
             return None
         else:
-            return pd.DataFrame(
-                {
-                    "date": self.dates[-len(self.account_information["cash"]) :],
-                    "actions": self.actions_memory,
-                    "transactions": self.transaction_memory,
-                }
-            )
+            return self.raw_state_cast_action_memory()
 
 print(StockTradingEnvV2.__doc__)
 # In[ ]:

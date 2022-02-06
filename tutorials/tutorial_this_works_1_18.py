@@ -386,7 +386,7 @@ if __name__=="__main__":
     #trade.head()
 
     e_trade_gym.hmax = 5000
-    df_account_value, df_actions = DRLAgent.DRL_prediction(model=model,environment = e_trade_gym)
+    df_account_value, df_actions = DRLAgent.DRL_prediction(model=model,environment = e_trade_gym)  #df_account_value是账号信息，df_actions是操作信息
     df_account_value.head(50)
 
     print("==============Get Backtest Results===========")
