@@ -295,8 +295,11 @@ if __name__=="__main__":
 
     train = data_split(processed, start_date, mid_date)
     trade = data_split(processed, mid_date, end_date)
-    print(train.head())
-    print(trade.head())
+    #print(train.head())
+    #print(trade.head())
+
+    print("train date length = {0}".format(len(train["date"].unique())))
+    print("trade date length = {0}".format(len(trade["date"].unique())))
 
     information_cols = ['daily_variance', 'change', 'log_volume', 'close','day',
                     'macd', 'rsi_30', 'cci_30', 'dx_30', 'turbulence']
@@ -304,18 +307,18 @@ if __name__=="__main__":
     e_train_gym = StockTradingEnvV2(df=train,
                                     initial_amount=1e6,
                                     hmax=5000,
-                                    out_of_cash_penalty=0,
+                                    out_of_cash_penalty=0.001,       #超支后，金额减少原始金额的0.1个点
                                     cache_indicator_data=False,
                                     cash_penalty_proportion=0.2,
                                     reward_scaling=1,
                                     daily_information_cols=information_cols,
-                                    print_verbosity=250,    #多少step执行log_step
-                                    random_start=True)      #启动多个环境采样，每个需要有所不同，需要随机启动
+                                    print_verbosity=250,             #多少step执行log_step
+                                    random_start=True)               #启动多个环境采样，每个需要有所不同，需要随机启动
 
     e_trade_gym = StockTradingEnvV2(df=trade,
                                     initial_amount=1e6,
                                     hmax=5000,
-                                    out_of_cash_penalty=0,
+                                    out_of_cash_penalty=0.001,
                                     cash_penalty_proportion=0.2,
                                     reward_scaling=1,
                                     cache_indicator_data=False,

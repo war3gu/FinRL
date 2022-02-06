@@ -74,9 +74,8 @@ class StockTradingEnvV2(gym.Env):
             reward_scaling=1e-4,
             initial_amount=1e6,
             daily_information_cols=["open", "close", "high", "low", "volume"],
-            out_of_cash_penalty=None,
+            out_of_cash_penalty=None,                                  #金额用完的惩罚比例，可以避免频繁的透支
             cache_indicator_data=True,
-            daily_reward=None,
             cash_penalty_proportion=0.1,
             random_start=True,
     ):
@@ -87,11 +86,13 @@ class StockTradingEnvV2(gym.Env):
         self.random_start = random_start
 
         self.df = self.df.set_index(date_col_name)
-        self.hmax = hmax
+        self.hmax = hmax                                      #每只股票操作的最大金额
         self.initial_amount = initial_amount
-        if out_of_cash_penalty is None:
-            out_of_cash_penalty = -initial_amount * 0.5
-        self.out_of_cash_penalty = out_of_cash_penalty
+
+        if not out_of_cash_penalty:
+            out_of_cash_penalty = 0.001
+        self.out_of_cash_penalty = out_of_cash_penalty         #超支之后，对cash的惩罚,同时没有没有动作
+
         self.print_verbosity = print_verbosity
         self.transaction_cost_pct = transaction_cost_pct
         self.reward_scaling = reward_scaling
@@ -106,7 +107,6 @@ class StockTradingEnvV2(gym.Env):
         self.episode = -1  # initialize so we can call reset
         #self.episode_history = []
         self.printed_header = False
-        self.daily_reward = daily_reward
         self.cache_indicator_data = cache_indicator_data
         self.cached_data = None
         self.cash_penalty_proportion = cash_penalty_proportion
@@ -126,44 +126,28 @@ class StockTradingEnvV2(gym.Env):
 
     @property
     def current_step(self):
+
         return self.date_index - self.starting_point
 
     def reset(self):
         self.seed()
-        self.sum_trades = 0
+
+        self.episode += 1
+
         if self.random_start:
-            starting_point = random.choice(range(int(len(self.dates) * 0.5)))
+            starting_point = random.choice(range(int(len(self.dates) * 0.1)))
             self.starting_point = starting_point
         else:
             self.starting_point = 0
+
         self.date_index = self.starting_point
-        self.episode += 1
-        self.actions_memory = []
-        self.transaction_memory = []
-        #self.state_memory = []
-        self.account_information = {
-            "cash": [],
-            "asset_value": [],
-            "total_assets": [],
-            "reward": [],
-        }
 
-
-
-        #应该是记录cash， assets， date， 就可以得到一切信息，包括状态
-        self.raw_state_memory = []
+        self.raw_state_memory = []    #应该是记录cash， assets， date， 就可以得到一切信息，包括状态
 
         self.add_raw_state(np.array([0] * len(self.assets)), np.array([0] * len(self.assets)), self.initial_amount, [0] * len(self.assets), self.date_index)
 
         init_state = self.raw_state_cast_state(-1)
-        '''
-        init_state = np.array(
-            [self.initial_amount]
-            + [0] * len(self.assets)
-            + self.get_date_vector(self.date_index)
-        )
-        '''
-        #self.state_memory.append(init_state)  #account_information是多余的，根据state是可以算出来account_information的
+
         return init_state
 
     def add_raw_state(self,cash_change, asset_change, cash, assets, date_index): #cash_change,asset_change都是没clip的
@@ -175,6 +159,10 @@ class StockTradingEnvV2(gym.Env):
         raw_state["date_index"] = date_index
 
         self.raw_state_memory.append(raw_state)
+
+    def get_raw_state(self, index):
+        memory = self.raw_state_memory[index]
+        return memory["cash_change"], memory["asset_change"], memory["cash"], memory["assets"], memory["date_index"]
 
     def raw_state_cast_state(self, index):
         raw_state = self.raw_state_memory[index]
@@ -270,26 +258,9 @@ class StockTradingEnvV2(gym.Env):
     def return_terminal(self, reason="Last Date", reward=0):
 
         state = self.raw_state_cast_state(-1)
+
         self.log_step(reason=reason, terminal_reward=reward)
-        reward = reward * self.reward_scaling
-        # Add outputs to logger interface
-        '''
-        reward_pct = self.account_information["total_assets"][-1] / self.initial_amount
-        logger.record("environment/total_reward_pct", (reward_pct - 1) * 100)
-        logger.record(
-            "environment/daily_trades",
-            self.sum_trades / (self.current_step) / len(self.assets),
-            )
-        logger.record("environment/completed_steps", self.current_step)
-        logger.record(
-            "environment/sum_rewards", np.sum(self.account_information["reward"])
-        )
-        logger.record(
-            "environment/cash_proportion",
-            self.account_information["cash"][-1]
-            / self.account_information["total_assets"][-1],
-            )
-        '''
+
         return state, reward, True, {}
 
     def log_step(self, reason, terminal_reward=None):
@@ -347,8 +318,9 @@ class StockTradingEnvV2(gym.Env):
         return total_assets
 
     def step(self, actions):
-        # let's just log what we're doing in terms of max actions at each step.
-        self.sum_trades += np.sum(np.abs(actions))
+
+        if self.random_start == False:
+            print("date_index = {0}".format(self.date_index))
 
         # print header only first time
         if self.printed_header is False:
@@ -358,88 +330,71 @@ class StockTradingEnvV2(gym.Env):
         if (self.current_step + 1) % self.print_verbosity == 0:
             self.log_step(reason="update")
 
-        # if we're at the end
-        if self.date_index == len(self.dates) - 1:
-            # if we hit the end, set reward to total gains (or losses)
-            return self.return_terminal(reward=0)                    #最后一天，没有操作，reward为0
-        else:
-            # compute value of cash + assets
+        if self.date_index == len(self.dates) - 1:                          #为了和models模块契合，传进来的self.date_index == len(self.dates) - 1才能结束
+            self.log_step(reason="Last Date", terminal_reward=0)
 
+            state = self.raw_state_cast_state(-1)
+
+            return state, 0, True, {}
+        else:
             cash, assets, asset_value, total_value, _ = self.raw_state_cast_information(-1)
 
             closings = np.array(self.get_date_vector(self.date_index, cols=["close"]))
 
-
-
-            # log the values of cash, assets, and total assets
-
-            self.account_information["cash"].append(cash)                         #record cash
-            self.account_information["asset_value"].append(asset_value)                 #record asset
-            self.account_information["total_assets"].append(total_value)   #record total asset
-            self.account_information["reward"].append(0)                           #record reward
-
-
-            # multiply action values by our scalar multiplier and save
             actions = actions * self.hmax                     #money
             cash_change = actions                             #金钱的变化
-            self.actions_memory.append(actions)
 
-            # scale cash purchases to asset # changes
             actions = actions / closings                      #stock count change
             asset_change = actions                            #股票持有量的变化
-            self.transaction_memory.append(actions)
 
-            # clip actions so we can't sell more assets than we hold
             actions = np.maximum(actions, -np.array(assets))  #-表示卖出，不能卖空
 
-            # compute our proceeds from sales, and add to cash
-            sells = -np.clip(actions, -np.inf, 0)             #stock sell
-            proceeds = np.dot(sells, closings)                #gain cash
-            costs = proceeds * self.transaction_cost_pct      #cost cash
-            coh = cash + proceeds                             #current cash
 
-            # compute the cost of our buys
+            sells = -np.clip(actions, -np.inf, 0)             #stock sell
+            gains = np.dot(sells, closings)                   #gain cash
+            costs = gains * self.transaction_cost_pct         #cost cash
+            cash_after_sell = cash + gains                    #current cash
+
+
             buys = np.clip(actions, 0, np.inf)                 #stock buy
             spend = np.dot(buys, closings)                     #spend cash
             costs += spend * self.transaction_cost_pct         #cost cash
 
-            # if we run out of cash, end the cycle and penalize
-            if (spend + costs) > coh:                          #买+交易费>卖+当前金钱
-                return self.return_terminal(                   #没有操作，reward为0
-                    reason="CASH SHORTAGE",
-                    reward=0
+            #test的时候碰到这个不是会崩溃吗？因为会直接退出，得不到account_memory
+            if (spend + costs) > cash_after_sell:              #此处如果不结束，会出现date重复，可能导致DRL_prediction出问题。也不用add_raw_state
+
+                penalty = -self.out_of_cash_penalty
+
+                _, _, cash_last, assets_last, date_index_last = self.get_raw_state(-1)
+
+                cash_last = cash_last + self.initial_amount * penalty
+
+                state_last = np.array(
+                    [cash_last]
+                    + assets
+                    + self.get_date_vector(date_index_last)
                 )
+                self.log_step(reason="CASH SHORTAGE", terminal_reward=penalty)
 
-            # verify we didn't do anything impossible here
-            assert (spend + costs) <= coh
+                if self.random_start == False:                 #这个示范代码写的不好，换个看看
+                    print("this is test, crash will happen")
 
-            # update our holdings
-            coh = coh - spend - costs                         #update total asset
-            holdings_updated = assets + actions               #update hlodings
-            self.date_index += 1                              #new day
+                return state_last, penalty, True, {}                      #重重的惩罚
 
+            assert (spend + costs) <= cash_after_sell
 
-            #self.state_memory.append(state)
-            self.add_raw_state(cash_change, asset_change, coh, list(holdings_updated), self.date_index)  #新状态，新一天
+            cash_after_buy = cash_after_sell - spend - costs                   #update cash
+            holdings_updated = assets + actions                                #update hlodings
 
-            '''
-            if self.current_step == 5:
-                dummy_action = self.raw_state_cast_action_memory()
-                dummy_infor = self.raw_state_cast_information_memory()
-                dummy_infor = []
-            '''
+            self.date_index += 1                                               #new day
+            self.add_raw_state(cash_change, asset_change, cash_after_buy, list(holdings_updated), self.date_index)
 
-
-
-            #此时才能计算reward。操作后第二天的资产减去操作前第一天的资产
-
-            # reward is (cash + assets) - (cash_last_step + assets_last_step)
-            reward = self.get_reward()
-
+            reward = self.get_reward()              # reward is (cash + assets) - (cash_last_step + assets_last_step)  此时才能计算reward。操作后第二天的资产减去操作前第一天的资产
 
             state = self.raw_state_cast_state(-1)
 
             reward = reward * self.reward_scaling
+
             return state, reward, False, {}
 
 
